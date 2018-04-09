@@ -1,6 +1,6 @@
 # Site settings
 title: James Liu
-description: 'Software Engineer'
+description: 'Software Engineer, Hobbyist Game Developer, Open Source Enthusiast'
 url: 'http://jamessliu.com'
 baseurl: ''
 google_analytics: UA-97459069-1
@@ -23,7 +23,7 @@ defaults:
 
 # Build settings
 destination: _site
-paginate: 10
+paginate: 20
 permalink: /:year/:title/
 markdown: kramdown
 highlighter: rouge
