@@ -1,6 +1,7 @@
 ---
 title: Unity3D Pain Points
 tags: [unity3d]
+redirect_from: //2017-04-16-Unity3D-Pain-Points
 ---
 
 **Unity3D** has risen up from small startup to one of the largest players in the

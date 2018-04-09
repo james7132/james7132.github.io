@@ -1,5 +1,6 @@
 ---
 tags: [deployment, doujin, indie, game-dev]
+redirect_from: /2017-06-09-Automated-Doujin-Game-Deployment
 ---
 
 A good game is often built on the solid feedback from playtesters. The tighter

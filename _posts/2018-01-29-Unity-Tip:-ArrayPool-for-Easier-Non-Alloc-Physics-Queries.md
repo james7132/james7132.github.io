@@ -1,6 +1,7 @@
 ---
 title: "Unity Tip: ArrayPool for Easier Non Alloc Physics Queries"
 tags: [unity3d]
+redirect_from: /2018-01-29-Unity-Tip-ArrayPool-for-Easier-Non-Alloc-Physics-Queries
 ---
 
 Here's a quick tip. In the upcoming Unity 2018.1 beta, they've recently added
