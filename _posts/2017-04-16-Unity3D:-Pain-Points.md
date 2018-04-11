@@ -28,7 +28,6 @@ to have three main ways of dealing with them:
    a new project. It begs the question: why isn't it a part of the engine?
 
 # Case 1: An Outdated Mono
-
 It's 2017: 15 years after the release of C# 4.0. Microsoft just released C# 7.0
 in March, yet Unity still only uses C# 4.0. In the following versions of C# 5.0
 and C# 6.0, many new language constructs dramatically simplify the development
@@ -45,13 +44,11 @@ This is simply a waiting game at this
 point.
 
 # Case 2: Poor API Design
-
 In general there are many design decisions with the API that make writing
 code for Unity projects an absolute pain. These problems are fairly prevalent
 throughout the engine and aren't strictly localized to any one part.
 
 ### Testing Support
-
 Unity pushes developers to design the projects with GameObject-Component
 composition over traditional object-oriented techniques like polymorphism.
 While I agree that this is a smart choice in giving designers great freedom in
@@ -84,7 +81,6 @@ current setup, you have to go explicitly out of your way to properly build a
 reasonable test suite for your game logic.
 
 ### Boilerplate Code
-
 Unity's base system makes it easy to do certain tasks, but at the same time,
 they promote bad practices. For example, exposing a varible to the editor
 requires the field either to be exposed as a public field, or be annotated with
@@ -118,7 +114,6 @@ public int ExposedField { get; } = 23;
 ```
 
 ### Async Support
-
 Asynchronous programming in Unity has traditionally done via Coroutines, which
 are a thin wrapper around C#'s iterator blocks, checked at fixed times in the
 engine's execution order.
@@ -165,7 +160,6 @@ syntax provided by C# 5.0. This further reinforces the need for Unity to update
 it's Mono runtime.
 
 ### Multithreading Support
-
 Unity is notorious for being a single threaded engine. Numerous API calls will
 error out if called from any thread other than the main thread. Some things as
 simple as accessing a `Transform`'s position from a worker thread throws
@@ -182,8 +176,7 @@ fruit of their work on it through improvements to the rendering and
 particle systems, there has been no information regarding when it will be
 released to the public, or how might developer utilize it.
 
-# Case 2: No Multiproject Management
-
+# Case 3: No Multiproject Management
 Right now, Unity staticaly compiles all assets into one cohesive standalone
 build. This holds for both code and non-code assets. All C# code usually is
 compiled into Assembly-CSharp.dll. All assets are built into statically packed
@@ -203,8 +196,7 @@ desired.
 For anyone working with a rapidly growing, or already large project, it's
 painfully obvious how Unity doesn't scale well here.
 
-# Case 3: No Package Manager
-
+# Case 4: No Package Manager
 This ties into the previous point: Unity has no support for packaged inclusion
 of non-local content. Currently Unity's package system is simply a compressed
 archive of assets and their respective project paths, which Unity simply unpacks
@@ -226,8 +218,7 @@ The simplest solution is a first party integration between Unity and Nuget:
  * Allows easy inclusion and use of general purpose third party dependencies like
    `Newtonsoft.Json`
 
-# Conclusion
-
+## Conclusion
 Despite all the problems I've enumerated with Unity, it is a great engine with a
 great community of developers, creating some of the best games out there today.There
 are just a few notable pain points in working with the engine that deserve a
