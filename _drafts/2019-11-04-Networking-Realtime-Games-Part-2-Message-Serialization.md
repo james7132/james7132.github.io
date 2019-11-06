@@ -3,9 +3,12 @@ title: "Networking Realtime Games from the Ground Up"
 tags: [networking, game dev, unity3d]
 ---
 
-*This is part 2 in a multi-part series on realtime game networking.*
+*This is part 2 in a multi-part series on realtime game networking. This is a
+technical article is not meant for a general audience and assumes at least a
+rudimentary understanding of with low level programming concepts like pointers
+and bitwise operations..*
 
-Now that we can establish rudimentary connections and send arbitrary binary
+Now that we can establish simple connections and send arbitrary binary
 messages. The next part is to start making sure we read and write meaningful
 information from these messages.
 
@@ -13,12 +16,12 @@ The first thing most developers will think of is JSON or other text based
 serialization methods. It works great in HTTP servers, why not here? Sure, JSON
 will probably work as a start, but we will soon see it's too large an encoding
 for our messages, and beyond bandwidth there are hidden costs to having large
-messages. Our goal is realtime games over the network, and for that we must
-decimate latency. Part of latency is the potential for packet loss. Most
-networks have a defined MTU (Maximum Transmission Unit), before messages are
-chunked into smaller messages. If any of these chunks are lost or mangled mid
-transmission, the entire message is lost, increasing latency. As more chunks in
-a message are added, the likelihood of any individual chunk gets mangled
+messages in realtime games. Our goal is realtime games over the network, and for
+that we must decimate latency. Part of latency is the potential for packet loss.
+Most networks have a defined MTU (Maximum Transmission Unit), before messages
+are chunked into smaller messages. If any of these chunks are lost or mangled
+mid transmission, the entire message is lost, increasing latency. As more chunks
+are added to a message, the likelihood of any individual chunk gets mangled
 expoentially increase, so minimizing chunking is essential. For most ethernet
 based systems, this lowest common MTU found is ~1200-1500 bytes. Use of JSON or
 other text based protocols is highly wasteful of this precious space.
@@ -36,9 +39,9 @@ So what alternatives are there?
    and read from the wire.
 
 To maximize savings on the wire, we'll be going more into depth into the custom
-binary serializer. The others can easily be implemented via a preexisting library.
-What is detailed below is the design ideas behind Hourai Networking's custom
-serializer and how to utilize it to it's maximum potential.
+binary serializer. The others can easily be implemented via a preexisting
+library.  What is detailed below is the design ideas behind Hourai Networking's
+custom serializer and how to utilize it to it's maximum potential.
 
 ## Serializing and Deserializing Fields
 One may ask: why not just `memcpy` the message as if it were a C struct directly
@@ -55,7 +58,7 @@ the same with our serializer.
 ### Basics: Symmetrical Serialization/Deserializtion Code
 First we should define some basic data types for serialization:
 ```csharp
-public struct Serializer {
+public unsafe struct Serializer {
   byte* _start;
   byte* _current;
   byte* _end;
@@ -81,7 +84,7 @@ public struct Serializer {
 
 }
 
-public struct Deserializer {
+public unsafe struct Deserializer {
   byte* _start;
   byte* _current;
   byte* _end;
@@ -118,8 +121,17 @@ Here `Serializer` and `Deserializer` are mirrors of each other, providing a
 write-only and read-only interface for creating message buffers. Not shown here
 are the various overloads of `Serializer.Write` and `Deserializer.ReadXXX`.
 
-The expected use is to define symmetrical serialization and deserialization
-routines on implementation of `INetworkSerializable`. For example:
+Why use unsafe structs? Structs allocated on the stack are extremely quick to
+allocate and deallocate. The end goal is to read to or write from existing
+continguous buffers in memory, which ultimately means sequentially reading bytes
+based on the position in memory. Switching to using pointers also skips the C#
+bounds checking when accessing managed arrays. Some functions will repeatedly
+access sequential bytes we are assured to be safe to access. Additional bounds
+checking only slows the encoding.
+
+The expected use of these types is to define symmetrical serialization and
+deserialization routines on implementation of `INetworkSerializable`. For
+example:
 
 ```csharp
 public struct TwinJoysticks : INetworkSerializable {
@@ -178,19 +190,74 @@ integers will always have the highest bits set:
 ```
 
 When fed directly through a varint encoder, this always results in negative
-numbers being encoded as a maximum length varint.
+numbers being encoded as a maximum length varint. The commonly seen solution is
+to encode signed integers via ZigZag encoding. The idea is to encode numbers
+with low absolute value encode with a small varint by zig-zagging across the
+number line back and forth through the positive and negative numbers. -1 becomes
+1, 1 becomes 2, -1 becomes 3, and so on.
 
+|Signed Original|Encoded As|
+|:--|:--|
+|0| 0|
+|-1|  1|
+|1| 2|
+|-2|  3|
+|2147483647|  4294967294|
+|-2147483648| 4294967295|
+
+This is efficiently computed via the following snippet:
+
+```csharp
+(n << 1) ^ (n >> 31)      // For 32-bit integers
+(n << 1) ^ (n >> 63)      // For 64-bit integers
+```
+
+Again, this assumes that the message values are biased towards numbers with low
+absolute value. If this isn't the case, it may actually be more efficient to
+encode the entire integer on the wire.
+
+### Reducing Message Size: Compression
+One general way to further cut bandwidth and fragmentation is through use of
+compression. There are plenty of compression algorithms out there to use on
+these messages (DEFLATE, Brotli, LZMA, LZ4, etc). Choose one that works for you,
+I used LZ4 (https://github.com/HouraiTeahouse/LZF). Binary data generally
+doesn't compress well, but repetitive structures like those in games may
+actually see some gains via compression. I actually added a conditional
+compression step.  Sometimes compression actually makes the message bigger than
+it is uncompressed, usually by way of adding a header that is larger than  the
+original message. In these cases, I added yet another one byte header: 0 if the
+rest of the message is uncompressed, and any other number if it is compressed.
+Below is the compression code:
+
+```csharp
+var out_buffer = (byte*)UnsafeUtility.Malloc(msg_size + 1, Allocator.Persistent);
+int size = CLZF2.TryCompress(msg, msg_size, out_buffer + 1, msg_size);
+// Outputs 0 if compression failed
+if (size > 0) {
+  out_buffer[0] = 1;
+  size = size + 1;
+} else {
+  out_buffer[0] = 0;
+  UnsafeUtilty.MemCpy(out_buffer + 1, msg, msg_size);
+  size = msg_size + 1;
+}
+UnsafeUtility.Free(msg);
+return size;
+```
 
 ### Manual Message Size Reduction
-The following are a manual optimizations and must be done by the developer, most
-serialization libraries will not support these automatically. However, this is
-also where the vast majority of the bandwidth and message size savings will come
-from. I will be using Fantasy Crescendo's input structure as an example. It
-consists of two 2D joysticks (Move and Smash), and 5 buttons (Attack, Special,
-Grab, Shield, and Jump). This consists, at runtime, of 4 32-bit floats, and 5
-4-byte boolean values, for a grand total size of 36 bytes. In the next two
-sections, I will be reducing this to 5 bytes, a greater than 6-fold reduction in
-size.
+In the previous sections, we went over how the serializer could be improved to
+save space; however, that can only go so far. If bandwidth and fragmentation are
+still a problem, the only way is for the developer to hand optimize the
+messages. While the upfront cost to the developer is high, the benefits can be
+immense.
+
+For this section, I will be using Fantasy Crescendo's input structure as an
+example. It consists of two 2D joysticks (Move and Smash), and 5 buttons (
+Attack, Special, Grab, Shield, and Jump). This consists at runtime of 4 32-bit
+floats, and 5 4-byte boolean values, for a grand total size of 36 bytes. In the
+next two sections, I will be reducing this to 5 bytes, a greater than 6-fold
+reduction in size.
 
 #### Bit-Packing
 Booleans are extremely wasteful, espeicaly in C#. Most systems represent `bool`
@@ -243,6 +310,23 @@ float FloatFromAxis(sbyte value) {
 ```
 
 This will reduce the 16 bytes used on both input joysticks to 4 bytes.
+
+#### Delta Compression
+Delta compression is a stateful compression technique: instead of sending a full
+message, send only the bits that change. There are various ways of attempting
+this, but all of them involve storing the same state on both ends of the
+connection, applying a binary diffing algorithm (i.e.
+[FossilDelta](https://github.com/endel/FossilDelta)), then reconstructing the
+updated state on the other end of the connection.
+
+However, this can be quite difficult to implement properly on unreliable and
+unordered connections. One other option is to apply intra-message delta
+compression. Due to the unreliable nature of the underlying transport protocols,
+most games will repeatedly send batches of messages until it is acknolwedged
+(i.e. player input). These messages tend to be very similar to each other and
+delta compress very well. Store the complete first message, then delta
+compressing the rest. The remote can then reconstruct the entire batch by
+progressively applying the delta patches.
 
 ### Minimizing Garbage Collection
 This is problem specific to C# and other garbagge collected language runtimes.
@@ -342,31 +426,3 @@ void OnNetworkMessage(byte[] msg, int len) {
 
 This lets us send multiple types of messages through a single connection.
 
-## Message Compression
-One final way to further cut bandwidth and fragmentation is through use of
-compression. There are plenty of compression algorithms out there to use on
-these messages (DEFLATE, Brotli, LZMA, LZ4, etc). Choose one that works for you,
-I used LZ4 (https://github.com/HouraiTeahouse/LZF). Binary data generally
-doesn't compress well, but repetitive structures like in games may actuall see
-some gains via compression. I actually added a conditional compression step.
-Sometimes compression actually makes the message bigger than it is uncompressed,
-usually by way of adding a header that is larger than  the original message. In
-these cases, I added yet another one byte header: 0 if the rest of the message
-is uncompressed, and any other number if it is compressed. Below is the
-compression code:
-
-```csharp
-var out_buffer = (byte*)UnsafeUtility.Malloc(msg_size + 1, Allocator.Persistent);
-int size = CLZF2.TryCompress(msg, msg_size, out_buffer + 1, msg_size);
-// Outputs 0 if compression failed
-if (size > 0) {
-  out_buffer[0] = 1;
-  size = size + 1;
-} else {
-  out_buffer[0] = 0;
-  UnsafeUtilty.MemCpy(out_buffer + 1, msg, msg_size);
-  size = msg_size + 1;
-}
-UnsafeUtility.Free(msg);
-return size;
-```
